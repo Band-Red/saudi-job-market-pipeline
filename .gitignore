@@ -1,0 +1,22 @@
+# Credentials — never commit these
+.env
+
+# Data files — store in Google Drive instead
+data/bronze/
+data/silver/
+data/gold/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store
+
+# Logs
+logs/
+*.log
