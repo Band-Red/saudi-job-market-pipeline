@@ -1,0 +1,16 @@
+paths:
+  bronze: data/bronze
+  silver: data/silver/jobs.parquet
+
+sources: [careerjet, jsearch]
+
+# A title must contain one of its role's keywords (whole words) to be is_relevant
+role_keywords:
+  software engineer: [software, full stack, full-stack, fullstack, backend, back-end, frontend, front-end, developer, devops, devsecops, android, ios, mobile]
+  data engineer: [data engineer, data engineering, big data, etl, analytics engineer, data platform, data pipeline, data scientist, dataops, ml engineer]
+  frontend developer: [frontend, front-end, front end, react, angular, vue, javascript, ui developer, web developer, full stack, full-stack, fullstack]
+  backend developer: [backend, back-end, back end, api, .net, dotnet, java, php, node, python, django, golang, full stack, full-stack, fullstack]
+  ai engineer: [ai, artificial intelligence, machine learning, ml, deep learning, llm, generative, computer vision, nlp, data scientist, الذكاء الاصطناعي]
+
+# A title containing any of these is never relevant
+role_exclude: [civil, mechanical, electrical, hse, construction, procurement, facade, façade, fire protection, cost control, planning engineer]
