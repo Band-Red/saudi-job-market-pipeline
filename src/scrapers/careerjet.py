@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import requests
+import pandas as pd
 
 # --- Setup: find project root and load secrets -----------------------
 # careerjet.py is at: <root>/src/ingestion/careerjet.py
@@ -67,6 +68,84 @@ def save_bronze(source: str, role: str, payload: dict) -> Path:
     return out_path
 
 
+CSV_COLUMNS = [
+    "title", "company", "locations", "date", "salary", "description",
+    "site", "url", "target_role", "search_query", "collected_at",
+]
+
+
+def resolve_date(date_str: str | None = None) -> str:
+    """Return date_str, or today's date in UTC."""
+    return date_str or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def bronze_dir(date_str: str | None = None) -> Path:
+    """Return data/bronze/careerjet/<date> (today in UTC by default)."""
+    date_str = resolve_date(date_str)
+    return PROJECT_ROOT / "data" / "bronze" / "careerjet" / date_str
+
+
+def combine_bronze(date_str: str | None = None) -> pd.DataFrame:
+    """Combine all role JSON files for one date into a single DataFrame."""
+    rows = []
+    for path in sorted(bronze_dir(date_str).glob("*.json")):
+        with open(path, encoding="utf-8") as f:
+            payload = json.load(f)
+        if payload.get("type") != "JOBS":
+            continue
+
+        role = path.stem.replace("_", " ")  # "data_engineer" -> "data engineer"
+        collected_at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
+        for job in payload.get("jobs", []):
+            job["target_role"] = role
+            job["search_query"] = role
+            job["collected_at"] = collected_at
+            rows.append(job)
+
+    df = pd.DataFrame(rows).reindex(columns=CSV_COLUMNS)
+    # Careerjet highlights keywords with <b> tags; strip them
+    df["description"] = df["description"].str.replace(r"</?b>", "", regex=True)
+    return df
+
+
+def save_csv(date_str: str | None = None) -> Path:
+    """Combine the date's JSON files into data/bronze/careerjet/careerjet_jobs_<date>.csv, then delete the JSON files."""
+    in_dir = bronze_dir(date_str)
+    out_path = in_dir.parent / f"careerjet_jobs_{resolve_date(date_str)}.csv"
+    json_files = list(in_dir.glob("*.json"))
+
+    if not json_files:
+        print(f"No JSON files in {in_dir}")
+        return out_path
+
+    df = combine_bronze(date_str)
+
+    # Merge with a CSV from an earlier run on the same date
+    if out_path.exists():
+        old_df = pd.read_csv(out_path)
+        combined = pd.concat([old_df, df], ignore_index=True)
+    else:
+        combined = df
+
+    before = len(combined)
+    combined = combined.drop_duplicates(subset=["url"], keep="first")
+    combined.to_csv(out_path, index=False, encoding="utf-8-sig")
+
+    # CSV written successfully -> raw JSON no longer needed
+    for path in json_files:
+        path.unlink()
+    if not any(in_dir.iterdir()):
+        in_dir.rmdir()  # date folder is empty now
+
+    print(f"Jobs in this batch: {len(df)}")
+    print(f"Duplicates removed: {before - len(combined)}")
+    print(f"Total unique jobs saved: {len(combined)}")
+    print(f"File: {out_path}")
+    print(f"Deleted {len(json_files)} JSON files")
+    print(df["target_role"].value_counts())
+    return out_path
+
+
 # --- Main run: search each role, save each result ---------------------
 if __name__ == "__main__":
     for role in ROLES:
@@ -80,3 +159,5 @@ if __name__ == "__main__":
 
         saved_path = save_bronze("careerjet", role, data)
         print(f"  Saved to: {saved_path}\n")
+
+    save_csv()
