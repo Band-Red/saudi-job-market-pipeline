@@ -278,7 +278,7 @@ class BaytScraper:
         self.status_check_enabled = self.crawl_cfg.get("status_check_enabled", True)
         self.base_delay = cfg.get("throttle", {}).get("download_delay", 3.0)
 
-        self.bronze_path = Path(cfg["paths"]["bronze"])
+        self.bronze_path = _PROJECT_ROOT / cfg["paths"]["bayt_bronze"]
         if fresh_start and self.bronze_path.exists():
             self.bronze_path.unlink()
             _log("[FRESH] bronze deleted")
