@@ -18,22 +18,18 @@ role_exclude: [civil, mechanical, electrical, hse, construction, procurement, fa
 
 # --- Bayt scraper (src/scrapers/bayt_scraper.py) ----------------------
 # category name = target_role in silver
+# English only: /ar/ pages list the same job IDs, so scanning both doubles run time
 job_search_urls:
   software engineer:
     en: https://www.bayt.com/en/saudi-arabia/jobs/software-engineer-jobs/
-    ar: https://www.bayt.com/ar/saudi-arabia/jobs/software-engineer-jobs/
   data engineer:
     en: https://www.bayt.com/en/saudi-arabia/jobs/data-engineer-jobs/
-    ar: https://www.bayt.com/ar/saudi-arabia/jobs/data-engineer-jobs/
   frontend developer:
     en: https://www.bayt.com/en/saudi-arabia/jobs/frontend-developer-jobs/
-    ar: https://www.bayt.com/ar/saudi-arabia/jobs/frontend-developer-jobs/
   backend developer:
     en: https://www.bayt.com/en/saudi-arabia/jobs/backend-developer-jobs/
-    ar: https://www.bayt.com/ar/saudi-arabia/jobs/backend-developer-jobs/
   ai engineer:
     en: https://www.bayt.com/en/saudi-arabia/jobs/ai-engineer-jobs/
-    ar: https://www.bayt.com/ar/saudi-arabia/jobs/ai-engineer-jobs/
 
 crawl:
   max_pages_per_url: 5
