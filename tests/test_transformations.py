@@ -82,6 +82,24 @@ def test_is_saudi():
     assert is_saudi(None, None, None) is None
 
 
+# --- Cross-source duplicates ------------------------------------------
+def test_dedupe_cross_source_hidden_company_same_link():
+    import pandas as pd
+    from src.pipelines.silver_pipeline import dedupe_cross_source
+
+    df = pd.DataFrame({
+        "source": ["bayt", "jsearch"],
+        "job_id": ["5482604", "abc"],
+        "title": ["AI Researcher", "AI Researcher"],
+        "company": pd.array([None, None], dtype="string"),
+        "city": ["Riyadh", "Riyadh"],
+        "apply_url": pd.array(["https://www.bayt.com/en/x-5482604/", "https://www.bayt.com/en/x-5482604"], dtype="string"),
+        "first_seen_at": pd.to_datetime(["2026-09-17", "2026-09-17"], utc=True),
+    })
+    out = dedupe_cross_source(df)
+    assert out["source"].tolist() == ["jsearch"]
+
+
 # --- Bayt -------------------------------------------------------------
 from src.pipelines.silver_pipeline import map_bayt  # noqa: E402
 from src.utils.helpers import normalize_employment_type, split_bayt_location  # noqa: E402

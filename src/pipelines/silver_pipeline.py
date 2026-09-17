@@ -1,9 +1,15 @@
 import hashlib
+import sys
 from pathlib import Path
 
-import pandas as pd
+# Allow running this file directly (VS Code Run button), not only with python -m
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.utils.helpers import (
+import pandas as pd  # noqa: E402
+
+from src.utils.helpers import (  # noqa: E402
     PROJECT_ROOT,
     clean_title,
     company_key,
@@ -200,23 +206,27 @@ def dedupe_same_source(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def dedupe_cross_source(df: pd.DataFrame) -> pd.DataFrame:
-    """Same job (title + company + city) listed twice: keep the row from the highest-priority source."""
+    """Same job listed twice: keep the row from the highest-priority source.
+
+    Match 1: same apply link (works even when the employer is hidden).
+    Match 2: same title + company + city (only rows with a company).
+    """
     def norm(s: pd.Series) -> pd.Series:
         return s.fillna("").str.lower().str.replace(r"[^\w]+", "", regex=True)
 
     df = df.copy()
+    df["_rank"] = df["source"].map({s: i for i, s in enumerate(SOURCE_PRIORITY)}).fillna(len(SOURCE_PRIORITY))
+    df = df.sort_values(["_rank", "first_seen_at"])
+
+    df["_url"] = df["apply_url"].str.lower().str.rstrip("/")
+    df = df.drop_duplicates(subset="_url", keep="first")
+
     df["_company"] = df["company"].map(company_key)
     df["_key"] = norm(df["title"]) + "|" + df["_company"] + "|" + norm(df["city"])
-    df["_rank"] = df["source"].map({s: i for i, s in enumerate(SOURCE_PRIORITY)}).fillna(len(SOURCE_PRIORITY))
-
     has_company = df["_company"] != ""
-    matched = (
-        df[has_company]
-        .sort_values(["_rank", "first_seen_at"])
-        .drop_duplicates(subset="_key", keep="first")
-    )
+    matched = df[has_company].drop_duplicates(subset="_key", keep="first")
     result = pd.concat([matched, df[~has_company]], ignore_index=True)
-    return result.drop(columns=["_company", "_key", "_rank"])
+    return result.drop(columns=["_company", "_key", "_rank", "_url"])
 
 
 # --- 5. Build and write -----------------------------------------------
