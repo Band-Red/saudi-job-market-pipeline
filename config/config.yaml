@@ -2,6 +2,7 @@ paths:
   bronze: data/bronze
   silver: data/silver/jobs.parquet
   bayt_bronze: data/bronze/bayt/bayt_jobs.jsonl
+  gold: data/gold
 
 sources: [careerjet, jsearch, bayt]
 
