@@ -4,3 +4,6 @@ pandas==3.0.5
 pyarrow==25.0.1
 pyyaml==6.0.3
 pytest==9.1.1
+curl-cffi==0.16.3
+beautifulsoup4==4.15.0
+lxml==6.1.3

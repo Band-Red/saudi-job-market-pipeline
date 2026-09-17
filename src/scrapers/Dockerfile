@@ -14,5 +14,6 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-# No scrapy.cfg in this project — run via runspider
-CMD ["python", "-m", "scrapy", "runspider", "src/scrapers/bayt_scraper.py"]
+# Bronze output goes to data/bronze/bayt/ — mount it as a volume to keep it:
+#   docker run -v "$PWD/data:/app/data" bayt-scraper
+CMD ["python", "-m", "src.scrapers.bayt_scraper"]

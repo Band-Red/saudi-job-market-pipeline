@@ -278,7 +278,7 @@ class BaytScraper:
         self.status_check_enabled = self.crawl_cfg.get("status_check_enabled", True)
         self.base_delay = cfg.get("throttle", {}).get("download_delay", 3.0)
 
-        self.bronze_path = Path(cfg["paths"]["bronze"])
+        self.bronze_path = _PROJECT_ROOT / cfg["paths"]["bayt_bronze"]
         if fresh_start and self.bronze_path.exists():
             self.bronze_path.unlink()
             _log("[FRESH] bronze deleted")
@@ -344,20 +344,23 @@ class BaytScraper:
             job_url = urljoin(source_url, job_url)
 
         title = _first_text(card, ["h2 a", "h3 a", ".jb-title"])
+        # div.job-company-location-wrapper = company; dt.jb-label-location = location
         company = _first_text(card, [
-            ".job-company-location-wrapper a.t-default.t-bold",
-            "[class*='company'] a", "bdi",
+            "div.job-company-location-wrapper > div",
+            "div.job-company-location-wrapper a[href*='/company/']",
         ])
-        is_hidden = "محجوب" in company or "hidden" in company.lower()
+        is_hidden = ("محجوب" in company or "hidden" in company.lower()
+                     or "confidential" in company.lower())
 
         company_url = _first_attr(card, [
-            ".job-company-location-wrapper a", "[class*='company'] a",
+            "div.job-company-location-wrapper a[href*='/company/']",
         ])
         if company_url and company_url.startswith("/"):
             company_url = f"https://www.bayt.com{company_url}"
 
         logo = _first_attr(card, ["img.jb-logo", "[class*='logo'] img"], "src")
         location = _first_text(card, [
+            "dt.jb-label-location",
             ".job-company-location-wrapper .t-mute.t-small a span",
             ".jb-loc", "[class*='location']",
         ])
@@ -381,6 +384,10 @@ class BaytScraper:
             "span[id^='jb-date-']", ".jb-date span.t-bold", "time",
             "[class*='date']",
         ])
+        date_el = card.select_one("[data-automation-jobactivedate]")
+        date_posted_ts = None
+        if date_el and str(date_el.get("data-automation-jobactivedate", "")).isdigit():
+            date_posted_ts = int(date_el["data-automation-jobactivedate"])
         card_text = card.get_text(" ", strip=True)
         is_easy_apply = ("التقديم السريع" in card_text or "Easy Apply" in card_text)
         is_for_saudis_only = (
@@ -394,6 +401,7 @@ class BaytScraper:
             "company_logo": logo, "location": location,
             "summary": summary, "experience": experience,
             "career_level": career_level, "date_posted": date_posted,
+            "date_posted_ts": date_posted_ts,
             "is_easy_apply": is_easy_apply,
             "is_for_saudis_only": is_for_saudis_only,
             "is_hidden_company": is_hidden,

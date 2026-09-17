@@ -1,0 +1,15 @@
+# Secrets — pass at runtime with --env-file instead
+.env
+
+# Local data, env and caches
+data/
+.venv/
+venv/
+.git/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+logs/
+*.log
+.vscode/
+.idea/
