@@ -3,7 +3,7 @@ paths:
   silver: data/silver/jobs.parquet
   bayt_bronze: data/bronze/bayt/bayt_jobs.jsonl
 
-sources: [careerjet, jsearch]
+sources: [careerjet, jsearch, bayt]
 
 # A title must contain one of its role's keywords (whole words) to be is_relevant
 role_keywords:

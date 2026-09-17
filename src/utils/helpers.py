@@ -88,7 +88,8 @@ def is_saudi(city, location_raw, country) -> bool | None:
 
 
 # --- Company ----------------------------------------------------------
-HIDDEN_COMPANIES = {"confidential", "confidential employer", "confidential company", "undisclosed"}
+HIDDEN_COMPANIES = {"confidential", "confidential employer", "confidential company", "undisclosed",
+                    "اسم الشركة محجوب من قبل صاحب العمل"}
 LEGAL_SUFFIXES = r"\b(inc|llc|ltd|limited|co|corp|company|technologies|global service|group)\b"
 
 
@@ -153,6 +154,35 @@ def is_relevant(title, target_role, cfg: dict | None = None) -> bool:
         return False
     keywords = cfg["role_keywords"].get(str(target_role).lower(), [])
     return any(_contains_word(text, word) for word in keywords)
+
+
+# --- Job type ---------------------------------------------------------
+EMPLOYMENT_TYPES = {
+    "full time": "Full-time", "fulltime": "Full-time",
+    "part time": "Part-time", "parttime": "Part-time",
+    "contract": "Contract", "contractor": "Contract", "temporary": "Contract",
+    "internship": "Internship", "intern": "Internship",
+}
+
+
+def normalize_employment_type(value) -> str | None:
+    """'Full time' / 'Full-time' / 'FULLTIME' -> 'Full-time'; unknown text (e.g. an experience level) -> None."""
+    if _is_blank(value):
+        return None
+    key = re.sub(r"[-_\s]+", " ", str(value).lower()).strip()
+    return EMPLOYMENT_TYPES.get(key, EMPLOYMENT_TYPES.get(key.replace(" ", "")))
+
+
+def split_bayt_location(text) -> tuple[str | None, str | None]:
+    """Bayt lists 'district , city , country': 'Al Marwah , Riyadh , Saudi Arabia' -> ('Riyadh', 'SA')."""
+    if _is_blank(text):
+        return None, None
+    parts = [p.strip() for p in str(text).split(",") if p.strip()]
+    country = None
+    if parts and parts[-1].lower() in ("saudi arabia", "السعودية"):
+        country = "SA"
+        parts = parts[:-1]
+    return (parts[-1] if parts else None), country
 
 
 # --- Salary -----------------------------------------------------------
