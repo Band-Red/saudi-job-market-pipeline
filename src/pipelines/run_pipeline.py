@@ -5,11 +5,16 @@ Run:
     python -m src.pipelines.run_pipeline --skip-scrape    # use existing bronze files
     python -m src.pipelines.run_pipeline --no-upload      # don't upload to Azure
     python -m src.pipelines.run_pipeline --sources careerjet jsearch
+    python -m src.pipelines.run_pipeline --fresh-silver   # rebuild silver from local bronze only
+
+Silver = previous silver (from Azure, or the local file if Azure is not reachable)
+         + new bronze rows, cleaned and deduplicated together.
 """
 import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -17,6 +22,8 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+
+import pandas as pd  # noqa: E402
 
 from src.pipelines import gold_pipeline, silver_pipeline  # noqa: E402
 from src.utils.helpers import PROJECT_ROOT, load_config  # noqa: E402
@@ -50,11 +57,38 @@ def upload(local_dir: Path, container: str, prefix: str = "", pattern: str = "*"
     return True
 
 
+def load_previous_silver(silver_path: Path, container: str, use_azure: bool) -> pd.DataFrame | None:
+    """Old silver to combine with the new data: Azure copy first, local file as fallback."""
+    if use_azure:
+        from src.utils.azure_storage import download_file
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_file = Path(tmp) / silver_path.name
+            try:
+                if download_file(container, silver_path.name, tmp_file):
+                    previous = pd.read_parquet(tmp_file)
+                    print(f"  Previous silver from Azure: {len(previous)} rows")
+                    return previous
+                print("  No silver in Azure yet")
+            except Exception as error:  # noqa: BLE001
+                print(f"  Could not download silver from Azure: {error}")
+
+    if silver_path.exists():
+        previous = pd.read_parquet(silver_path)
+        print(f"  Previous silver from local file: {len(previous)} rows")
+        return previous
+
+    print("  No previous silver: building from bronze only")
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run scrapers, silver and gold, and upload to Azure")
     parser.add_argument("--skip-scrape", action="store_true", help="don't run the scrapers")
     parser.add_argument("--no-upload", action="store_true", help="don't upload to Azure")
     parser.add_argument("--sources", nargs="+", choices=list(SCRAPERS), default=list(SCRAPERS))
+    parser.add_argument("--fresh-silver", action="store_true",
+                        help="ignore the previous silver and rebuild from local bronze only")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -87,7 +121,9 @@ def main() -> int:
     # 2. Silver
     print("\n=== Silver ===")
     try:
-        silver_pipeline.save_silver(silver_pipeline.build_silver(cfg), cfg)
+        previous = None if args.fresh_silver else load_previous_silver(
+            silver_path, containers["silver"], use_azure=not args.no_upload)
+        silver_pipeline.save_silver(silver_pipeline.build_silver(cfg, previous), cfg)
         status["silver"] = "ok"
     except Exception as error:  # noqa: BLE001
         print(f"  Silver failed: {error}")

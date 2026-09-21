@@ -89,7 +89,8 @@ def test_run_pipeline_order(monkeypatch):
     monkeypatch.setattr(run_pipeline, "run_scraper", lambda s: calls.append(f"scrape {s}") or True)
     monkeypatch.setattr(run_pipeline, "upload",
                         lambda d, container, prefix="", pattern="*": calls.append(f"upload {container}/{prefix}") or True)
-    monkeypatch.setattr(run_pipeline.silver_pipeline, "build_silver", lambda cfg: "silver")
+    monkeypatch.setattr(run_pipeline, "load_previous_silver", lambda *a, **k: None)
+    monkeypatch.setattr(run_pipeline.silver_pipeline, "build_silver", lambda cfg, previous=None: "silver")
     monkeypatch.setattr(run_pipeline.silver_pipeline, "save_silver", lambda df, cfg: calls.append("silver"))
     monkeypatch.setattr(run_pipeline.gold_pipeline, "load_silver", lambda cfg: "silver")
     monkeypatch.setattr(run_pipeline.gold_pipeline, "build_gold", lambda df: {})
@@ -111,7 +112,8 @@ def test_run_pipeline_failed_scraper_continues(monkeypatch):
     from src.pipelines import run_pipeline
 
     monkeypatch.setattr(run_pipeline, "run_scraper", lambda s: s != "jsearch")
-    monkeypatch.setattr(run_pipeline.silver_pipeline, "build_silver", lambda cfg: "silver")
+    monkeypatch.setattr(run_pipeline, "load_previous_silver", lambda *a, **k: None)
+    monkeypatch.setattr(run_pipeline.silver_pipeline, "build_silver", lambda cfg, previous=None: "silver")
     monkeypatch.setattr(run_pipeline.silver_pipeline, "save_silver", lambda df, cfg: None)
     monkeypatch.setattr(run_pipeline.gold_pipeline, "load_silver", lambda cfg: "silver")
     monkeypatch.setattr(run_pipeline.gold_pipeline, "build_gold", lambda df: {})
