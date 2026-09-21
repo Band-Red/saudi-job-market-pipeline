@@ -55,9 +55,18 @@ def load_bronze(source: str, cfg: dict) -> pd.DataFrame:
 
 
 # --- 2. Map each source to the shared schema --------------------------
+def careerjet_job_id(df: pd.DataFrame) -> pd.Series:
+    """Careerjet urls are tracking links that change every day, so build the id from the job itself."""
+    def norm(s: pd.Series) -> pd.Series:
+        return s.fillna("").astype(str).str.lower().str.replace(r"[^\w]+", "", regex=True)
+
+    key = norm(df["title"]) + "|" + norm(df["company"]) + "|" + norm(df["locations"])
+    return key.map(lambda k: hashlib.sha1(k.encode()).hexdigest())
+
+
 def map_careerjet(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame()
-    out["job_id"] = df["url"].map(lambda u: hashlib.sha1(str(u).encode()).hexdigest())
+    out["job_id"] = careerjet_job_id(df)
     out["source"] = "careerjet"
     out["target_role"] = df["target_role"]
     out["title"] = df["title"]

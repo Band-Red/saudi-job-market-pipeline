@@ -28,3 +28,6 @@ logs/
 *.log
 
 
+
+# VS Code Code Runner temp files
+tempCodeRunnerFile.py
