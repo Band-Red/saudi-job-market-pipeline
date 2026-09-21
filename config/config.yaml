@@ -45,3 +45,11 @@ antibot:
 
 throttle:
   download_delay: 3.0
+
+# --- Azure Blob Storage (src/utils/azure_storage.py) -------------------
+# Account name comes from .env (AZURE_STORAGE_ACCOUNT_NAME)
+azure:
+  containers:
+    bronze: bronze
+    silver: silver
+    gold: gold
