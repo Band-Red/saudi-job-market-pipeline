@@ -166,3 +166,34 @@ def test_careerjet_job_id_ignores_changing_url():
     ids = careerjet_job_id(df)
     assert ids[0] == ids[1]      # same job, different daily tracking link
     assert ids[0] != ids[2]      # same title, other city -> other job
+
+
+# --- Combine previous silver with new bronze ---------------------------
+def test_build_silver_combines_previous(monkeypatch):
+    """An old job only in the previous silver is kept; a job in both keeps the earliest first_seen_at."""
+    import pandas as pd
+    from src.pipelines import silver_pipeline as sp
+    from src.utils.helpers import load_config
+
+    cfg = {**load_config(), "sources": ["jsearch"]}
+    bronze = pd.DataFrame([{
+        "job_uid": "A", "target_role": "data engineer", "job_title": "Big Data Engineer",
+        "employer_name": "Mozn", "job_city": "Riyadh", "job_state": None, "job_country": "SA",
+        "job_location": "Riyadh", "job_is_remote": False, "job_employment_type": "Full-time",
+        "job_posted_at_datetime_utc": "2026-09-20T00:00:00Z", "job_min_salary": None,
+        "job_max_salary": None, "job_salary_period": None, "job_description": "d",
+        "job_apply_link": "https://x/a", "job_publisher": "LinkedIn",
+        "collected_at": "2026-09-21T10:00:00+00:00",
+    }])
+    monkeypatch.setattr(sp, "load_bronze", lambda source, cfg: bronze)
+
+    previous = sp.build_silver({**cfg}, None)                     # silver as it was...
+    previous.loc[0, "first_seen_at"] = pd.Timestamp("2026-09-10", tz="UTC")   # ...job A first seen earlier
+    old_job = previous.iloc[[0]].copy()
+    old_job[["job_id", "apply_url", "title"]] = ["B", "https://x/b", "Senior Data Engineer"]
+    previous = pd.concat([previous, old_job], ignore_index=True)  # job B: only in old silver
+
+    out = sp.build_silver(cfg, previous).set_index("job_id")
+    assert sorted(out.index) == ["A", "B"]
+    assert str(out.loc["A", "first_seen_at"].date()) == "2026-09-10"   # earliest kept
+    assert str(out.loc["A", "last_seen_at"].date()) == "2026-09-21"    # latest kept

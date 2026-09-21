@@ -80,6 +80,19 @@ def upload_file(local_file: Path, container: ContainerClient, blob_name: str) ->
     return "uploaded" if remote_md5 is None else "updated"
 
 
+def download_file(container_name: str, blob_name: str, local_file: Path) -> bool:
+    """Download one blob to local_file. Returns False if the blob doesn't exist."""
+    blob = get_service_client().get_container_client(container_name).get_blob_client(blob_name)
+    try:
+        data = blob.download_blob().readall()
+    except ResourceNotFoundError:
+        return False
+    local_file = Path(local_file)
+    local_file.parent.mkdir(parents=True, exist_ok=True)
+    local_file.write_bytes(data)
+    return True
+
+
 def upload_folder(local_dir: Path, container_name: str, prefix: str = "", pattern: str = "*") -> dict[str, str]:
     """Upload every file in local_dir (recursively) to <container>/<prefix>/<relative path>."""
     local_dir = Path(local_dir)

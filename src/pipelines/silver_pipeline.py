@@ -239,7 +239,23 @@ def dedupe_cross_source(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # --- 5. Build and write -----------------------------------------------
-def build_silver(cfg: dict) -> pd.DataFrame:
+def from_previous_silver(previous: pd.DataFrame) -> pd.DataFrame:
+    """Turn an old silver table back into mapped rows so it can be cleaned and deduped with new data.
+
+    last_seen_at becomes collected_at and first_seen_at is kept, so dedupe keeps the earliest
+    first_seen_at and the latest last_seen_at across old and new rows.
+    """
+    out = previous.copy()
+    out["collected_at"] = out["last_seen_at"]
+    out["source_first_seen_at"] = out["first_seen_at"]
+    for col in SILVER_COLUMNS:
+        if col not in out:
+            out[col] = None
+    return out[SILVER_COLUMNS]
+
+
+def build_silver(cfg: dict, previous: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Build silver from all local bronze files, plus the rows of a previous silver table if given."""
     mappers = {"careerjet": map_careerjet, "jsearch": map_jsearch, "bayt": map_bayt}
     frames = []
     for source in cfg["sources"]:
@@ -247,6 +263,10 @@ def build_silver(cfg: dict) -> pd.DataFrame:
         print(f"{source}: {len(raw)} bronze rows")
         if not raw.empty:
             frames.append(mappers[source](raw))
+
+    if previous is not None and not previous.empty:
+        print(f"previous silver: {len(previous)} rows")
+        frames.append(from_previous_silver(previous))
 
     if not frames:
         return pd.DataFrame(columns=SILVER_COLUMNS)
@@ -268,7 +288,8 @@ def build_silver(cfg: dict) -> pd.DataFrame:
         print(f"  {name}: {value}")
 
     df = df.drop(columns="collected_at")
-    return df.sort_values(["source", "posted_at"], ascending=[True, False]).reset_index(drop=True)
+    # job_id as last key makes the order (and the Parquet file) identical when the data is identical
+    return df.sort_values(["source", "posted_at", "job_id"], ascending=[True, False, True]).reset_index(drop=True)
 
 
 def save_silver(df: pd.DataFrame, cfg: dict) -> Path:
