@@ -150,3 +150,19 @@ def test_map_bayt():
     assert out.loc[1, "description"] == "Full page text"
     assert out["status"].tolist() == ["active", "closed"]
     assert str(out.loc[0, "posted_at"].date()) == "2026-09-16"  # posted "22 hours ago" on Sep 17
+
+
+# --- Careerjet id -----------------------------------------------------
+def test_careerjet_job_id_ignores_changing_url():
+    import pandas as pd
+    from src.pipelines.silver_pipeline import careerjet_job_id
+
+    df = pd.DataFrame({
+        "title": ["Data Engineer", "data engineer ", "Data Engineer"],
+        "company": ["Mozn", "MOZN", "Mozn"],
+        "locations": ["Riyadh", "Riyadh", "Jeddah"],
+        "url": ["https://jobviewtrack.com/v2/aaa", "https://jobviewtrack.com/v2/bbb", "https://jobviewtrack.com/v2/aaa"],
+    })
+    ids = careerjet_job_id(df)
+    assert ids[0] == ids[1]      # same job, different daily tracking link
+    assert ids[0] != ids[2]      # same title, other city -> other job
