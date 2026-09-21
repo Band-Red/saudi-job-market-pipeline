@@ -2,10 +2,10 @@
 from types import SimpleNamespace
 
 import pytest
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
 from src.utils import azure_storage
-from src.utils.azure_storage import file_md5, upload_file, upload_folder
+from src.utils.azure_storage import dated_name, file_md5, upload_file, upload_folder
 
 
 class FakeBlob:
@@ -18,7 +18,8 @@ class FakeBlob:
         return SimpleNamespace(content_settings=SimpleNamespace(content_md5=self.store[self.name]["md5"]))
 
     def upload_blob(self, data, overwrite, content_settings):
-        assert overwrite is True
+        if not overwrite and self.name in self.store:
+            raise ResourceExistsError("exists")
         self.store[self.name] = {"data": data.read(), "md5": bytearray(content_settings.content_md5)}
 
 
@@ -88,7 +89,7 @@ def test_run_pipeline_order(monkeypatch):
     calls = []
     monkeypatch.setattr(run_pipeline, "run_scraper", lambda s: calls.append(f"scrape {s}") or True)
     monkeypatch.setattr(run_pipeline, "upload",
-                        lambda d, container, prefix="", pattern="*": calls.append(f"upload {container}/{prefix}") or True)
+                        lambda d, container, prefix="", pattern="*", **o: calls.append(f"upload {container}/{prefix}") or True)
     monkeypatch.setattr(run_pipeline, "load_previous_silver", lambda *a, **k: None)
     monkeypatch.setattr(run_pipeline.silver_pipeline, "build_silver", lambda cfg, previous=None: "silver")
     monkeypatch.setattr(run_pipeline.silver_pipeline, "save_silver", lambda df, cfg: calls.append("silver"))
@@ -121,3 +122,39 @@ def test_run_pipeline_failed_scraper_continues(monkeypatch):
     monkeypatch.setattr("sys.argv", ["run_pipeline", "--no-upload"])
 
     assert run_pipeline.main() == 1   # jsearch failed -> exit code 1, but silver and gold still ran
+
+
+# --- Bronze: add-only ---------------------------------------------------
+def test_add_only_never_changes_existing_blob(tmp_path):
+    container = FakeContainer()
+    f = tmp_path / "careerjet_jobs_2026-09-21.csv"
+    f.write_text("first run", encoding="utf-8")
+    assert upload_file(f, container, "careerjet/" + f.name, add_only=True) == "uploaded"
+
+    f.write_text("second run, more rows", encoding="utf-8")                    # same name, new content
+    assert upload_file(f, container, "careerjet/" + f.name, add_only=True) == "skipped"
+    assert container.store["careerjet/" + f.name]["data"] == b"first run"      # Azure copy untouched
+    assert container.uploads == 1
+
+
+def test_dated_name():
+    assert dated_name("bayt_jobs.jsonl", "2026-09-21") == "bayt_jobs_2026-09-21.jsonl"
+    assert dated_name("careerjet_jobs_2026-09-17.csv", "2026-09-21") == "careerjet_jobs_2026-09-17.csv"
+
+
+def test_bronze_folder_add_only_with_dates(tmp_path, monkeypatch):
+    container = FakeContainer()
+    monkeypatch.setattr(azure_storage, "get_container", lambda name: container)
+    container.store["bayt/bayt_jobs.jsonl"] = {"data": b"old undated", "md5": bytearray(16)}   # older file
+
+    (tmp_path / "bayt_jobs.jsonl").write_text("day 1", encoding="utf-8")
+    day1 = upload_folder(tmp_path, "bronze", prefix="bayt", add_only=True, date_str="2026-09-21")
+    assert day1 == {"bayt/bayt_jobs_2026-09-21.jsonl": "uploaded"}
+
+    (tmp_path / "bayt_jobs.jsonl").write_text("day 2", encoding="utf-8")
+    day2 = upload_folder(tmp_path, "bronze", prefix="bayt", add_only=True, date_str="2026-09-22")
+    assert day2 == {"bayt/bayt_jobs_2026-09-22.jsonl": "uploaded"}
+
+    assert sorted(container.store) == ["bayt/bayt_jobs.jsonl", "bayt/bayt_jobs_2026-09-21.jsonl",
+                                       "bayt/bayt_jobs_2026-09-22.jsonl"]   # nothing deleted or merged
+    assert container.store["bayt/bayt_jobs_2026-09-21.jsonl"]["data"] == b"day 1"

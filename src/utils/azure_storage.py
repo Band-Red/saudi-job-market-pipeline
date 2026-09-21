@@ -1,6 +1,6 @@
-import base64
 import hashlib
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -55,13 +55,15 @@ def file_md5(path: Path) -> bytes:
     return digest.digest()
 
 
-def upload_file(local_file: Path, container: ContainerClient, blob_name: str) -> str:
+def upload_file(local_file: Path, container: ContainerClient, blob_name: str, add_only: bool = False) -> str:
     """Upload one file without creating duplicates.
 
     The blob name is fixed (same local file -> same blob), so a file is never stored twice.
     - blob missing          -> "uploaded"
     - same content (MD5)    -> "skipped"  (nothing sent)
     - content changed       -> "updated"  (blob overwritten)
+
+    add_only=True (bronze): a blob that already exists is never changed -> "skipped".
     """
     local_file = Path(local_file)
     md5 = file_md5(local_file)
@@ -69,8 +71,20 @@ def upload_file(local_file: Path, container: ContainerClient, blob_name: str) ->
 
     try:
         remote_md5 = blob.get_blob_properties().content_settings.content_md5
+        exists = True
     except ResourceNotFoundError:
-        remote_md5 = None
+        remote_md5, exists = None, False
+
+    if add_only:
+        if exists:
+            return "skipped"
+        try:
+            with open(local_file, "rb") as data:
+                # overwrite=False: Azure itself refuses to replace an existing blob
+                blob.upload_blob(data, overwrite=False, content_settings=ContentSettings(content_md5=md5))
+        except ResourceExistsError:
+            return "skipped"
+        return "uploaded"
 
     if remote_md5 is not None and bytes(remote_md5) == md5:
         return "skipped"
@@ -93,8 +107,25 @@ def download_file(container_name: str, blob_name: str, local_file: Path) -> bool
     return True
 
 
-def upload_folder(local_dir: Path, container_name: str, prefix: str = "", pattern: str = "*") -> dict[str, str]:
-    """Upload every file in local_dir (recursively) to <container>/<prefix>/<relative path>."""
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def dated_name(relative: str, date_str: str) -> str:
+    """'bayt_jobs.jsonl' -> 'bayt_jobs_2026-09-21.jsonl'; names that already have a date stay the same."""
+    if DATE_RE.search(relative):
+        return relative
+    path = Path(relative)
+    return path.with_name(f"{path.stem}_{date_str}{path.suffix}").as_posix()
+
+
+def upload_folder(local_dir: Path, container_name: str, prefix: str = "", pattern: str = "*",
+                  add_only: bool = False, date_str: str | None = None) -> dict[str, str]:
+    """Upload every file in local_dir (recursively) to <container>/<prefix>/<relative path>.
+
+    add_only: never change a blob that exists (see upload_file).
+    date_str: add this date to file names that have none, so a file that keeps its name locally
+              (Bayt's bayt_jobs.jsonl) is stored as a new dated file each day instead of being skipped forever.
+    """
     local_dir = Path(local_dir)
     if not local_dir.exists():
         return {}
@@ -103,12 +134,14 @@ def upload_folder(local_dir: Path, container_name: str, prefix: str = "", patter
     results = {}
     for path in sorted(p for p in local_dir.rglob(pattern) if p.is_file()):
         relative = path.relative_to(local_dir).as_posix()
+        if date_str:
+            relative = dated_name(relative, date_str)
         blob_name = f"{prefix}/{relative}" if prefix else relative
-        results[blob_name] = upload_file(path, container, blob_name)
+        results[blob_name] = upload_file(path, container, blob_name, add_only=add_only)
     return results
 
 
 def upload_to_bronze(local_file, source_name) -> str:
-    """Upload one bronze file to bronze/<source>/<file name> (kept for existing callers)."""
+    """Upload one bronze file to bronze/<source>/<file name>, add-only (kept for existing callers)."""
     local_file = Path(local_file)
-    return upload_file(local_file, get_container("bronze"), f"{source_name}/{local_file.name}")
+    return upload_file(local_file, get_container("bronze"), f"{source_name}/{local_file.name}", add_only=True)

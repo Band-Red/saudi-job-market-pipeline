@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Allow running this file directly (VS Code Run button), not only with python -m
@@ -42,12 +43,12 @@ def run_scraper(source: str) -> bool:
     return result.returncode == 0
 
 
-def upload(local_dir: Path, container: str, prefix: str = "", pattern: str = "*") -> bool:
+def upload(local_dir: Path, container: str, prefix: str = "", pattern: str = "*", **options) -> bool:
     """Upload a folder to Azure; print a count per result (uploaded / updated / skipped)."""
     from src.utils.azure_storage import upload_folder  # imported here so --no-upload works without Azure
 
     try:
-        results = upload_folder(local_dir, container, prefix, pattern)
+        results = upload_folder(local_dir, container, prefix, pattern, **options)
     except Exception as error:  # noqa: BLE001 — report and let the next step run
         print(f"  Azure upload to '{container}' failed: {error}")
         return False
@@ -109,13 +110,15 @@ def main() -> int:
             status["azure access"] = "FAILED"
             args.no_upload = True
 
-    # 1. Bronze: each scraper, then upload its folder
+    # 1. Bronze: each scraper, then upload its folder.
+    #    Add-only: files already in Azure are never changed or deleted; undated names get today's date.
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for source in args.sources:
         if not args.skip_scrape:
             print(f"\n=== Scraper: {source} ===")
             status[f"scrape {source}"] = "ok" if run_scraper(source) else "FAILED"
         if not args.no_upload:
-            ok = upload(bronze_dir / source, containers["bronze"], prefix=source)
+            ok = upload(bronze_dir / source, containers["bronze"], prefix=source, add_only=True, date_str=today)
             status[f"upload bronze/{source}"] = "ok" if ok else "FAILED"
 
     # 2. Silver
